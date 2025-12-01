@@ -3,6 +3,7 @@ class MapDrawingApp {
     constructor() {
         this.map = null;
         this.lines = []; // Array of drawn lines
+        this.lineCounter = 1; // Counter for line IDs (A1, A2, A3...)
         this.markers = []; // Array of markers
         this.currentLine = null; // Current line being drawn
         this.selectedFeature = null; // Currently selected feature
@@ -23,6 +24,27 @@ class MapDrawingApp {
         this.markerLayer = L.layerGroup(); // Layer for markers
         this.distanceLabels = L.layerGroup(); // Layer for distance labels
         
+        // Map layers
+        this.streetLayer = null;
+        this.satelliteLayer = null;
+        this.currentBaseLayer = null;
+        
+        // Excavation types (Arabic)
+        this.excavationTypes = [
+            "العادي",
+            "الطارئ", 
+            "المتعدد",
+            "توصيلة المباني",
+            "مخططات جديدة"
+        ];
+        
+        // Road types
+        this.roadTypes = [
+            "Soil",
+            "Asphalt", 
+            "tiles/blocks"
+        ];
+        
         this.init();
     }
     
@@ -36,15 +58,25 @@ class MapDrawingApp {
     
     initializeMap() {
         // Initialize map with OpenStreetMap tiles
-        this.map = L.map('map').setView([51.505, -0.09], 13);
+        this.map = L.map('map').setView([24.7136, 46.6753], 13); // Default to Riyadh
         
-        // Add base tile layer
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        // Create street layer
+        this.streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap contributors',
             maxZoom: 19
-        }).addTo(this.map);
+        });
         
-        // Add layers to map
+        // Create satellite layer (using Esri World Imagery)
+        this.satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: '© Esri',
+            maxZoom: 19
+        });
+        
+        // Add default street layer
+        this.streetLayer.addTo(this.map);
+        this.currentBaseLayer = this.streetLayer;
+        
+        // Add feature layers
         this.lineLayer.addTo(this.map);
         this.markerLayer.addTo(this.map);
         this.distanceLabels.addTo(this.map);
@@ -88,9 +120,13 @@ class MapDrawingApp {
             this.updateButtonStates();
         });
         
-        // Capture buttons
-        document.getElementById('start-capture-btn').addEventListener('click', () => this.startCapture());
-        document.getElementById('stop-capture-btn').addEventListener('click', () => this.stopCapture());
+        // Map layer buttons
+        document.getElementById('street-layer-btn').addEventListener('click', () => this.switchToStreetLayer());
+        document.getElementById('satellite-layer-btn').addEventListener('click', () => this.switchToSatelliteLayer());
+        
+        // GPS Capture buttons
+        document.getElementById('capture-start-btn').addEventListener('click', () => this.captureStartPoint());
+        document.getElementById('capture-end-btn').addEventListener('click', () => this.captureEndPoint());
         
         // Color picker
         document.getElementById('line-color').addEventListener('change', (e) => {
@@ -101,7 +137,6 @@ class MapDrawingApp {
         // Save/Load buttons
         document.getElementById('save-btn').addEventListener('click', () => this.saveDrawing());
         document.getElementById('load-btn').addEventListener('click', () => this.loadDrawing());
-        document.getElementById('export-btn').addEventListener('click', () => this.exportGeoJSON());
         
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
@@ -111,6 +146,10 @@ class MapDrawingApp {
             if (e.key === 'Escape') {
                 this.cancelDrawing();
                 this.cancelCapture();
+            }
+            if (e.key === 's' && e.ctrlKey) {
+                e.preventDefault();
+                this.saveDrawing();
             }
         });
     }
@@ -134,6 +173,28 @@ class MapDrawingApp {
         });
     }
     
+    switchToStreetLayer() {
+        if (this.currentBaseLayer !== this.streetLayer) {
+            this.map.removeLayer(this.currentBaseLayer);
+            this.streetLayer.addTo(this.map);
+            this.currentBaseLayer = this.streetLayer;
+            
+            document.getElementById('street-layer-btn').classList.add('active');
+            document.getElementById('satellite-layer-btn').classList.remove('active');
+        }
+    }
+    
+    switchToSatelliteLayer() {
+        if (this.currentBaseLayer !== this.satelliteLayer) {
+            this.map.removeLayer(this.currentBaseLayer);
+            this.satelliteLayer.addTo(this.map);
+            this.currentBaseLayer = this.satelliteLayer;
+            
+            document.getElementById('satellite-layer-btn').classList.add('active');
+            document.getElementById('street-layer-btn').classList.remove('active');
+        }
+    }
+    
     setMode(mode) {
         this.mode = mode;
         
@@ -149,6 +210,7 @@ class MapDrawingApp {
             'delete': 'Click on a line to delete it'
         };
         document.getElementById('drawing-status').textContent = statusText[mode];
+        this.updateButtonStates();
     }
     
     updateButtonStates() {
@@ -190,7 +252,8 @@ class MapDrawingApp {
             latlngs: [{ lat, lng }],
             startIcon: this.startIcon,
             endIcon: this.endIcon,
-            color: this.lineColor
+            color: this.lineColor,
+            lineId: `A${this.lineCounter}`
         };
         
         // Add start marker
@@ -230,6 +293,7 @@ class MapDrawingApp {
         const lineData = {
             id: Date.now(),
             type: 'line',
+            lineId: `A${this.lineCounter}`,
             latlngs: this.currentLine.latlngs,
             startIcon: this.currentLine.startIcon,
             endIcon: this.currentLine.endIcon,
@@ -238,6 +302,10 @@ class MapDrawingApp {
             startMarker: this.currentLine.startMarker,
             endMarker: null,
             distance: distance,
+            depth: 0,
+            width: 0,
+            excavationType: this.excavationTypes[0],
+            roadType: this.roadTypes[0],
             created: new Date().toISOString()
         };
         
@@ -256,14 +324,17 @@ class MapDrawingApp {
         // Store in lines array
         this.lines.push(lineData);
         
-        // Add to coordinates list
-        this.addToCoordinatesList(this.currentLine.latlngs, distance);
+        // Add to table
+        this.addLineToTable(lineData);
+        
+        // Increment line counter
+        this.lineCounter++;
         
         // Reset current line
         this.currentLine = null;
         
         // Update status
-        document.getElementById('drawing-status').textContent = `Line created! Distance: ${distance.toFixed(2)} meters`;
+        document.getElementById('drawing-status').textContent = `Line ${lineData.lineId} created! Distance: ${distance.toFixed(2)} meters`;
         
         // Auto-select the new line
         this.selectFeature(lineData);
@@ -284,101 +355,71 @@ class MapDrawingApp {
         }
     }
     
-    // GPS Capture Functions (Start/End Points Only)
-    startCapture() {
-        // Change UI state
-        this.captureState = 'waiting_for_start';
-        
-        // Update UI
-        document.getElementById('start-capture-btn').style.display = 'none';
-        document.getElementById('stop-capture-btn').style.display = 'inline-flex';
-        document.getElementById('stop-capture-btn').innerHTML = '<i class="fas fa-crosshairs"></i> Capture Start Point';
-        
+    // GPS Capture Functions
+    captureStartPoint() {
         // Start GPS if not already running
         if (!this.gpsWatchId) {
             this.startGPS();
         }
         
-        // Clear any previous capture data
-        this.captureStartPoint = null;
-        this.captureEndPoint = null;
-        
-        // Remove any existing temporary capture line
-        if (this.captureTempLine) {
-            this.lineLayer.removeLayer(this.captureTempLine);
-            this.captureTempLine = null;
+        if (this.gpsMarker) {
+            const latlng = this.gpsMarker.getLatLng();
+            this.captureStartPoint = { lat: latlng.lat, lng: latlng.lng };
+            
+            // Create start marker
+            this.captureStartMarker = this.createMarker(latlng.lat, latlng.lng, 'start');
+            this.captureStartMarker.addTo(this.markerLayer);
+            
+            // Change UI state
+            this.captureState = 'waiting_for_end';
+            document.getElementById('capture-start-btn').style.display = 'none';
+            document.getElementById('capture-end-btn').style.display = 'flex';
+            
+            // Create temporary line from start to current GPS position
+            this.captureTempLine = L.polyline([
+                [latlng.lat, latlng.lng],
+                [latlng.lat, latlng.lng]
+            ], {
+                color: '#28a745',
+                weight: 3,
+                opacity: 0.7,
+                dashArray: '10, 10'
+            }).addTo(this.lineLayer);
+            
+            document.getElementById('drawing-status').textContent = 
+                'Start point captured. Move to end point and click "Capture End Point"';
+        } else {
+            document.getElementById('drawing-status').textContent = 
+                'Waiting for GPS signal... Please wait';
         }
-        
-        // Remove any existing capture markers
-        if (this.captureStartMarker) {
-            this.markerLayer.removeLayer(this.captureStartMarker);
-            this.captureStartMarker = null;
-        }
-        if (this.captureEndMarker) {
-            this.markerLayer.removeLayer(this.captureEndMarker);
-            this.captureEndMarker = null;
-        }
-        
-        document.getElementById('drawing-status').textContent = 
-            'Move to start point and click "Capture Start Point" when ready';
     }
     
-    stopCapture() {
-        if (this.captureState === 'waiting_for_start') {
-            // Capture start point
-            if (this.gpsMarker) {
-                const latlng = this.gpsMarker.getLatLng();
-                this.captureStartPoint = { lat: latlng.lat, lng: latlng.lng };
-                
-                // Create start marker
-                this.captureStartMarker = this.createMarker(latlng.lat, latlng.lng, 'start');
-                this.captureStartMarker.addTo(this.markerLayer);
-                
-                // Change to waiting for end point
-                this.captureState = 'waiting_for_end';
-                document.getElementById('stop-capture-btn').innerHTML = '<i class="fas fa-flag-checkered"></i> Capture End Point';
-                document.getElementById('drawing-status').textContent = 
-                    'Move to end point and click "Capture End Point" when ready';
-                
-                // Create temporary line from start to current GPS position
-                this.captureTempLine = L.polyline([
-                    [latlng.lat, latlng.lng],
-                    [latlng.lat, latlng.lng]
-                ], {
-                    color: '#28a745',
-                    weight: 3,
-                    opacity: 0.7,
-                    dashArray: '10, 10'
-                }).addTo(this.lineLayer);
+    captureEndPoint() {
+        if (this.gpsMarker && this.captureStartPoint) {
+            const latlng = this.gpsMarker.getLatLng();
+            this.captureEndPoint = { lat: latlng.lat, lng: latlng.lng };
+            
+            // Remove temporary line
+            if (this.captureTempLine) {
+                this.lineLayer.removeLayer(this.captureTempLine);
+                this.captureTempLine = null;
             }
-        } else if (this.captureState === 'waiting_for_end') {
-            // Capture end point
-            if (this.gpsMarker && this.captureStartPoint) {
-                const latlng = this.gpsMarker.getLatLng();
-                this.captureEndPoint = { lat: latlng.lat, lng: latlng.lng };
-                
-                // Remove temporary line
-                if (this.captureTempLine) {
-                    this.lineLayer.removeLayer(this.captureTempLine);
-                    this.captureTempLine = null;
-                }
-                
-                // Create end marker
-                this.captureEndMarker = this.createMarker(latlng.lat, latlng.lng, 'end');
-                this.captureEndMarker.addTo(this.markerLayer);
-                
-                // Draw the final line
-                this.createCaptureLine();
-                
-                // Reset capture state
-                this.captureState = 'idle';
-                
-                // Update UI
-                document.getElementById('start-capture-btn').style.display = 'inline-flex';
-                document.getElementById('stop-capture-btn').style.display = 'none';
-                
-                document.getElementById('drawing-status').textContent = 'GPS line captured!';
-            }
+            
+            // Create end marker
+            this.captureEndMarker = this.createMarker(latlng.lat, latlng.lng, 'end');
+            this.captureEndMarker.addTo(this.markerLayer);
+            
+            // Draw the final line
+            this.createGPSLine();
+            
+            // Reset capture state
+            this.captureState = 'idle';
+            
+            // Update UI
+            document.getElementById('capture-end-btn').style.display = 'none';
+            document.getElementById('capture-start-btn').style.display = 'flex';
+            
+            document.getElementById('drawing-status').textContent = 'GPS line captured!';
         }
     }
     
@@ -404,14 +445,14 @@ class MapDrawingApp {
             this.captureEndPoint = null;
             
             // Update UI
-            document.getElementById('start-capture-btn').style.display = 'inline-flex';
-            document.getElementById('stop-capture-btn').style.display = 'none';
+            document.getElementById('capture-end-btn').style.display = 'none';
+            document.getElementById('capture-start-btn').style.display = 'flex';
             
             document.getElementById('drawing-status').textContent = 'GPS capture cancelled';
         }
     }
     
-    createCaptureLine() {
+    createGPSLine() {
         if (!this.captureStartPoint || !this.captureEndPoint) return;
         
         // Calculate distance
@@ -433,6 +474,7 @@ class MapDrawingApp {
         const lineData = {
             id: Date.now(),
             type: 'gps-line',
+            lineId: `A${this.lineCounter}`,
             latlngs: [this.captureStartPoint, this.captureEndPoint],
             startIcon: 'circle',
             endIcon: this.endIcon,
@@ -441,6 +483,10 @@ class MapDrawingApp {
             startMarker: this.captureStartMarker,
             endMarker: this.captureEndMarker,
             distance: distance,
+            depth: 0,
+            width: 0,
+            excavationType: this.excavationTypes[0],
+            roadType: this.roadTypes[0],
             created: new Date().toISOString(),
             capturedByGPS: true
         };
@@ -455,13 +501,17 @@ class MapDrawingApp {
         // Store in lines array
         this.lines.push(lineData);
         
-        // Add to coordinates list
-        const pointsArray = [this.captureStartPoint, this.captureEndPoint];
-        this.addToCoordinatesList(pointsArray, distance);
+        // Add to table
+        this.addLineToTable(lineData);
+        
+        // Increment line counter
+        this.lineCounter++;
         
         // Clear capture markers references (they're already on the map)
         this.captureStartMarker = null;
         this.captureEndMarker = null;
+        this.captureStartPoint = null;
+        this.captureEndPoint = null;
     }
     
     addDistanceLabel(lineData) {
@@ -540,14 +590,117 @@ class MapDrawingApp {
         
         return `
             <div class="popup-content">
-                <strong>Line Details</strong><br>
+                <strong>Line ${lineData.lineId}</strong><br>
                 Distance: ${distance.toFixed(2)} meters<br>
                 Start: ${start.lat.toFixed(6)}, ${start.lng.toFixed(6)}<br>
                 End: ${end.lat.toFixed(6)}, ${end.lng.toFixed(6)}<br>
-                Created: ${new Date(lineData.created).toLocaleString()}<br>
-                <button onclick="app.deleteLine(${lineData.id})">Delete Line</button>
+                Depth: ${lineData.depth}m<br>
+                Width: ${lineData.width}m<br>
+                Excavation: ${lineData.excavationType}<br>
+                Road: ${lineData.roadType}<br>
+                <button onclick="app.deleteLine('${lineData.lineId}')">Delete Line</button>
             </div>
         `;
+    }
+    
+    addLineToTable(lineData) {
+        const tbody = document.getElementById('lines-table-body');
+        const row = document.createElement('tr');
+        row.id = `row-${lineData.lineId}`;
+        row.dataset.lineId = lineData.lineId;
+        
+        const start = lineData.latlngs[0];
+        const end = lineData.latlngs[lineData.latlngs.length - 1];
+        
+        // Create excavation type dropdown
+        const excavationSelect = document.createElement('select');
+        this.excavationTypes.forEach(type => {
+            const option = document.createElement('option');
+            option.value = type;
+            option.textContent = type;
+            if (type === lineData.excavationType) option.selected = true;
+            excavationSelect.appendChild(option);
+        });
+        excavationSelect.onchange = (e) => {
+            const line = this.lines.find(l => l.lineId === lineData.lineId);
+            if (line) {
+                line.excavationType = e.target.value;
+            }
+        };
+        
+        // Create road type dropdown
+        const roadTypeSelect = document.createElement('select');
+        this.roadTypes.forEach(type => {
+            const option = document.createElement('option');
+            option.value = type;
+            option.textContent = type;
+            if (type === lineData.roadType) option.selected = true;
+            roadTypeSelect.appendChild(option);
+        });
+        roadTypeSelect.onchange = (e) => {
+            const line = this.lines.find(l => l.lineId === lineData.lineId);
+            if (line) {
+                line.roadType = e.target.value;
+            }
+        };
+        
+        row.innerHTML = `
+            <td><strong>${lineData.lineId}</strong></td>
+            <td class="coord-cell">${start.lat.toFixed(6)}, ${start.lng.toFixed(6)}</td>
+            <td class="coord-cell">${end.lat.toFixed(6)}, ${end.lng.toFixed(6)}</td>
+            <td>${lineData.distance.toFixed(2)}</td>
+            <td><input type="number" step="0.01" value="${lineData.depth}" class="depth-input" data-line-id="${lineData.lineId}"></td>
+            <td><input type="number" step="0.01" value="${lineData.width}" class="width-input" data-line-id="${lineData.lineId}"></td>
+            <td></td>
+            <td></td>
+        `;
+        
+        // Replace the empty cells with actual dropdowns
+        row.cells[6].appendChild(excavationSelect);
+        row.cells[7].appendChild(roadTypeSelect);
+        
+        tbody.appendChild(row);
+        
+        // Add event listeners to depth and width inputs
+        const depthInput = row.querySelector('.depth-input');
+        const widthInput = row.querySelector('.width-input');
+        
+        depthInput.addEventListener('change', (e) => {
+            const line = this.lines.find(l => l.lineId === lineData.lineId);
+            if (line) {
+                line.depth = parseFloat(e.target.value) || 0;
+            }
+        });
+        
+        widthInput.addEventListener('change', (e) => {
+            const line = this.lines.find(l => l.lineId === lineData.lineId);
+            if (line) {
+                line.width = parseFloat(e.target.value) || 0;
+            }
+        });
+    }
+    
+    updateLineInTable(lineData) {
+        const row = document.getElementById(`row-${lineData.lineId}`);
+        if (row) {
+            const start = lineData.latlngs[0];
+            const end = lineData.latlngs[lineData.latlngs.length - 1];
+            
+            row.cells[1].textContent = `${start.lat.toFixed(6)}, ${start.lng.toFixed(6)}`;
+            row.cells[2].textContent = `${end.lat.toFixed(6)}, ${end.lng.toFixed(6)}`;
+            row.cells[3].textContent = lineData.distance.toFixed(2);
+            row.cells[4].querySelector('input').value = lineData.depth;
+            row.cells[5].querySelector('input').value = lineData.width;
+            row.cells[6].querySelector('select').value = lineData.excavationType;
+            row.cells[7].querySelector('select').value = lineData.roadType;
+        }
+    }
+    
+    removeLineFromTable(lineId) {
+        const row = document.getElementById(`row-${lineId}`);
+        if (row) {
+            row.remove();
+        }
     }
     
     // GPS Functions
@@ -630,10 +783,7 @@ class MapDrawingApp {
         }
         
         // Update drawing status with current accuracy
-        if (this.captureState === 'waiting_for_start') {
-            document.getElementById('drawing-status').textContent = 
-                `Move to start point (Accuracy: ${Math.round(accuracy)}m)`;
-        } else if (this.captureState === 'waiting_for_end') {
+        if (this.captureState === 'waiting_for_end') {
             document.getElementById('drawing-status').textContent = 
                 `Move to end point (Accuracy: ${Math.round(accuracy)}m)`;
         }
@@ -685,7 +835,7 @@ class MapDrawingApp {
             
             // Update drawing status
             document.getElementById('drawing-status').textContent = 
-                `Line selected - Distance: ${feature.distance.toFixed(2)} meters`;
+                `Line ${feature.lineId} selected - Distance: ${feature.distance.toFixed(2)} meters`;
         }
     }
     
@@ -708,14 +858,14 @@ class MapDrawingApp {
         for (let i = this.lines.length - 1; i >= 0; i--) {
             const line = this.lines[i];
             if (this.isPointNearLine(lat, lng, line.latlngs)) {
-                this.deleteLine(line.id);
+                this.deleteLine(line.lineId);
                 break;
             }
         }
     }
     
-    deleteLine(id) {
-        const index = this.lines.findIndex(line => line.id === id);
+    deleteLine(lineId) {
+        const index = this.lines.findIndex(line => line.lineId === lineId);
         if (index !== -1) {
             const line = this.lines[index];
             
@@ -732,21 +882,40 @@ class MapDrawingApp {
             // Remove from array
             this.lines.splice(index, 1);
             
+            // Remove from table
+            this.removeLineFromTable(lineId);
+            
             // Deselect if it was selected
-            if (this.selectedFeature && this.selectedFeature.id === id) {
+            if (this.selectedFeature && this.selectedFeature.lineId === lineId) {
                 this.deselectFeature();
             }
             
-            // Update coordinates list
-            this.updateCoordinatesList();
+            document.getElementById('drawing-status').textContent = `Line ${lineId} deleted`;
             
-            document.getElementById('drawing-status').textContent = 'Line deleted';
+            // Re-index remaining lines in table
+            this.reindexTable();
         }
+    }
+    
+    reindexTable() {
+        // Clear table
+        const tbody = document.getElementById('lines-table-body');
+        tbody.innerHTML = '';
+        
+        // Re-add all lines with updated IDs
+        this.lines.forEach((line, index) => {
+            const newLineId = `A${index + 1}`;
+            line.lineId = newLineId;
+            this.addLineToTable(line);
+        });
+        
+        // Update line counter
+        this.lineCounter = this.lines.length + 1;
     }
     
     deleteSelectedFeature() {
         if (this.selectedFeature) {
-            this.deleteLine(this.selectedFeature.id);
+            this.deleteLine(this.selectedFeature.lineId);
         }
     }
     
@@ -835,93 +1004,29 @@ class MapDrawingApp {
         return R * c;
     }
     
-    addToCoordinatesList(points, distance = null) {
-        const container = document.getElementById('coordinates-container');
-        
-        // Clear previous coordinates
-        container.innerHTML = '<h4>Line Coordinates</h4>';
-        
-        points.forEach((point, index) => {
-            const coordItem = document.createElement('div');
-            coordItem.className = 'coordinate-item';
-            coordItem.innerHTML = `
-                <span class="index">${index === 0 ? 'START' : 'END'}</span>
-                ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}
-                ${point.accuracy ? `<br><small>±${Math.round(point.accuracy)}m</small>` : ''}
-            `;
-            container.appendChild(coordItem);
-        });
-        
-        if (distance !== null) {
-            const distanceItem = document.createElement('div');
-            distanceItem.className = 'coordinate-item';
-            distanceItem.style.borderLeftColor = '#28a745';
-            distanceItem.innerHTML = `
-                <span class="index">DIST</span>
-                <strong>${distance.toFixed(2)} meters</strong>
-            `;
-            container.appendChild(distanceItem);
-        }
-    }
-    
-    updateCoordinatesList() {
-        const container = document.getElementById('coordinates-container');
-        
-        if (this.lines.length === 0) {
-            container.innerHTML = `
-                <div style="text-align: center; color: #666; padding: 20px;">
-                    No line captured yet.<br>
-                    Use GPS Capture or Draw Line tools.
-                </div>
-            `;
-            return;
-        }
-        
-        container.innerHTML = '<h4>Line Coordinates</h4>';
-        
-        // Show only the last line
-        const lastLine = this.lines[this.lines.length - 1];
-        
-        lastLine.latlngs.forEach((point, index) => {
-            const coordItem = document.createElement('div');
-            coordItem.className = 'coordinate-item';
-            coordItem.innerHTML = `
-                <span class="index">${index === 0 ? 'START' : 'END'}</span>
-                ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}
-            `;
-            container.appendChild(coordItem);
-        });
-        
-        if (lastLine.distance !== null) {
-            const distanceItem = document.createElement('div');
-            distanceItem.className = 'coordinate-item';
-            distanceItem.style.borderLeftColor = '#28a745';
-            distanceItem.innerHTML = `
-                <span class="index">DIST</span>
-                <strong>${lastLine.distance.toFixed(2)} meters</strong>
-            `;
-            container.appendChild(distanceItem);
-        }
-    }
-    
     saveDrawing() {
         const drawingData = {
             lines: this.lines.map(line => ({
                 id: line.id,
                 type: line.type,
+                lineId: line.lineId,
                 latlngs: line.latlngs,
                 startIcon: line.startIcon,
                 endIcon: line.endIcon,
                 color: line.color,
                 distance: line.distance,
+                depth: line.depth,
+                width: line.width,
+                excavationType: line.excavationType,
+                roadType: line.roadType,
                 created: line.created,
                 capturedByGPS: line.capturedByGPS || false
             })),
             metadata: {
-                version: '2.0',
+                version: '3.0',
                 savedAt: new Date().toISOString(),
                 totalLines: this.lines.length,
-                totalPoints: this.lines.reduce((sum, line) => sum + line.latlngs.length, 0)
+                lineCounter: this.lineCounter
             }
         };
         
@@ -933,7 +1038,7 @@ class MapDrawingApp {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'map-drawing-' + new Date().toISOString().slice(0, 10) + '.json';
+        a.download = `map-drawing-${new Date().toISOString().slice(0, 10)}.json`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -980,6 +1085,9 @@ class MapDrawingApp {
         
         this.lines = [];
         
+        // Clear table
+        document.getElementById('lines-table-body').innerHTML = '';
+        
         // Load new lines
         data.lines.forEach(lineData => {
             const points = lineData.latlngs.map(p => [p.lat, p.lng]);
@@ -1023,116 +1131,48 @@ class MapDrawingApp {
             line.bindPopup(popupContent);
             
             this.lines.push(lineObj);
+            
+            // Add to table
+            this.addLineToTable(lineObj);
         });
         
-        // Update coordinates list
-        this.updateCoordinatesList();
+        // Update line counter
+        if (data.metadata && data.metadata.lineCounter) {
+            this.lineCounter = data.metadata.lineCounter;
+        } else {
+            this.lineCounter = this.lines.length + 1;
+        }
         
         document.getElementById('drawing-status').textContent = `Loaded ${data.lines.length} lines`;
     }
     
-    exportGeoJSON() {
-        const geoJSON = {
-            type: "FeatureCollection",
-            features: this.lines.map(line => ({
-                type: "Feature",
-                geometry: {
-                    type: "LineString",
-                    coordinates: line.latlngs.map(p => [p.lng, p.lat]) // GeoJSON uses [lng, lat]
-                },
-                properties: {
-                    id: line.id,
-                    type: line.type,
-                    startIcon: line.startIcon,
-                    endIcon: line.endIcon,
-                    color: line.color,
-                    distance: line.distance,
-                    created: line.created,
-                    capturedByGPS: line.capturedByGPS || false
-                }
-            }))
-        };
+    exportExcel() {
+        // Create CSV content
+        let csv = 'Line,Start Lat,Start Lng,End Lat,End Lng,Length (m),Depth,Width,Excavation Type,Road Type\n';
         
-        this.downloadFile(JSON.stringify(geoJSON, null, 2), 'drawing.geojson', 'application/geo+json');
-    }
-    
-    exportKML() {
-        const kml = `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-  <Document>
-    <name>Map Drawing Export</name>
-    <description>Exported from Map Drawing App</description>
-    ${this.lines.map((line, i) => `
-    <Placemark>
-      <name>Line ${i + 1}</name>
-      <description>Distance: ${line.distance ? line.distance.toFixed(2) : 'Unknown'} meters</description>
-      <Style>
-        <LineStyle>
-          <color>${this.rgbToKMLColor(line.color)}</color>
-          <width>4</width>
-        </LineStyle>
-      </Style>
-      <LineString>
-        <coordinates>
-          ${line.latlngs.map(p => `${p.lng},${p.lat},0`).join(' ')}
-        </coordinates>
-      </LineString>
-    </Placemark>
-    `).join('')}
-  </Document>
-</kml>`;
+        this.lines.forEach(line => {
+            const start = line.latlngs[0];
+            const end = line.latlngs[line.latlngs.length - 1];
+            
+            csv += `"${line.lineId}",${start.lat},${start.lng},${end.lat},${end.lng},${line.distance.toFixed(2)},${line.depth},${line.width},"${line.excavationType}","${line.roadType}"\n`;
+        });
         
-        this.downloadFile(kml, 'drawing.kml', 'application/vnd.google-earth.kml+xml');
-    }
-    
-    exportGPX() {
-        const gpx = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="Map Drawing App" xmlns="http://www.topografix.com/GPX/1/1">
-  <metadata>
-    <name>Map Drawing Export</name>
-    <time>${new Date().toISOString()}</time>
-  </metadata>
-  ${this.lines.map((line, i) => `
-  <trk>
-    <name>Line ${i + 1}</name>
-    <desc>Distance: ${line.distance ? line.distance.toFixed(2) : 'Unknown'} meters</desc>
-    <trkseg>
-      ${line.latlngs.map(p => `
-      <trkpt lat="${p.lat}" lon="${p.lng}">
-        <ele>0</ele>
-      </trkpt>
-      `).join('')}
-    </trkseg>
-  </trk>
-  `).join('')}
-</gpx>`;
-        
-        this.downloadFile(gpx, 'drawing.gpx', 'application/gpx+xml');
-    }
-    
-    rgbToKMLColor(rgb) {
-        // Convert #RRGGBB to AABBGGRR (KML format)
-        if (rgb.startsWith('#')) {
-            const r = rgb.slice(1, 3);
-            const g = rgb.slice(3, 5);
-            const b = rgb.slice(5, 7);
-            return `ff${b}${g}${r}`; // Alpha + Blue + Green + Red
-        }
-        return 'ff0000ff'; // Default: opaque blue
-    }
-    
-    downloadFile(content, filename, mimeType) {
-        const blob = new Blob([content], { type: mimeType });
+        // Create Blob and download
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = filename;
+        a.download = `lines-export-${new Date().toISOString().slice(0, 10)}.csv`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        document.getElementById('drawing-status').textContent = `Exported as ${filename}`;
+        document.getElementById('drawing-status').textContent = 'Data exported to CSV!';
+    }
+    
+    exportCSV() {
+        this.exportExcel(); // Same function for now
     }
 }
 
