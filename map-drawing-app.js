@@ -1,4 +1,4 @@
-// map-drawing-app.js - UPDATED VERSION
+// map-drawing-app.js
 class MapDrawingApp {
     constructor() {
         this.map = null;
@@ -12,6 +12,9 @@ class MapDrawingApp {
         this.captureState = 'idle'; // 'idle', 'waiting_for_start', 'waiting_for_end'
         this.captureStartPoint = null; // Start point for capture
         this.captureEndPoint = null; // End point for capture
+        this.captureTempLine = null; // Temporary line during capture
+        this.captureStartMarker = null; // Start marker for capture
+        this.captureEndMarker = null; // End marker for capture
         this.mode = 'draw'; // 'draw', 'select', 'delete'
         this.startIcon = 'circle';
         this.endIcon = 'flag';
@@ -85,7 +88,7 @@ class MapDrawingApp {
             this.updateButtonStates();
         });
         
-        // Capture buttons - UPDATED
+        // Capture buttons
         document.getElementById('start-capture-btn').addEventListener('click', () => this.startCapture());
         document.getElementById('stop-capture-btn').addEventListener('click', () => this.stopCapture());
         
@@ -216,12 +219,12 @@ class MapDrawingApp {
             this.lineLayer.removeLayer(this.currentLine.tempLine);
         }
         
+        // Calculate distance
+        const distance = this.calculateDistance(this.currentLine.latlngs[0], this.currentLine.latlngs[1]);
+        
         // Create final line
         const line = L.polyline(this.currentLine.points, this.lineStyle);
         line.addTo(this.lineLayer);
-        
-        // Calculate distance
-        const distance = this.calculateDistance(this.currentLine.latlngs[0], this.currentLine.latlngs[1]);
         
         // Store line data
         const lineData = {
@@ -281,7 +284,7 @@ class MapDrawingApp {
         }
     }
     
-    // UPDATED: GPS Capture Functions (Start/End Points Only)
+    // GPS Capture Functions (Start/End Points Only)
     startCapture() {
         // Change UI state
         this.captureState = 'waiting_for_start';
@@ -472,7 +475,7 @@ class MapDrawingApp {
         const distanceLabel = L.divIcon({
             className: 'distance-label',
             html: `<div style="
-                background: rgba(255, 255, 255, 0.9);
+                background: rgba(255, 255, 255, 0.95);
                 border: 2px solid ${lineData.color};
                 border-radius: 4px;
                 padding: 4px 8px;
@@ -481,6 +484,7 @@ class MapDrawingApp {
                 color: #333;
                 white-space: nowrap;
                 box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                transform: translateY(-50%);
             ">${lineData.distance.toFixed(2)} m</div>`,
             iconSize: null,
             iconAnchor: [0, 0]
@@ -529,7 +533,68 @@ class MapDrawingApp {
         return marker;
     }
     
-    // UPDATED: GPS tracking updates temporary line
+    createLinePopup(lineData) {
+        const distance = lineData.distance;
+        const start = lineData.latlngs[0];
+        const end = lineData.latlngs[1];
+        
+        return `
+            <div class="popup-content">
+                <strong>Line Details</strong><br>
+                Distance: ${distance.toFixed(2)} meters<br>
+                Start: ${start.lat.toFixed(6)}, ${start.lng.toFixed(6)}<br>
+                End: ${end.lat.toFixed(6)}, ${end.lng.toFixed(6)}<br>
+                Created: ${new Date(lineData.created).toLocaleString()}<br>
+                <button onclick="app.deleteLine(${lineData.id})">Delete Line</button>
+            </div>
+        `;
+    }
+    
+    // GPS Functions
+    requestLocationPermission() {
+        if (!navigator.geolocation) {
+            this.updateGPSStatus('Geolocation not supported', false);
+            return;
+        }
+        
+        navigator.geolocation.getCurrentPosition(
+            (position) => this.onLocationSuccess(position),
+            (error) => this.onLocationError(error),
+            { enableHighAccuracy: true }
+        );
+    }
+    
+    startGPS() {
+        if (!navigator.geolocation) return;
+        
+        this.gpsWatchId = navigator.geolocation.watchPosition(
+            (position) => this.onLocationSuccess(position),
+            (error) => this.onLocationError(error),
+            {
+                enableHighAccuracy: true,
+                maximumAge: 0,
+                timeout: 5000,
+                distanceFilter: 1
+            }
+        );
+        
+        this.updateGPSStatus('Tracking active', true);
+    }
+    
+    stopGPS() {
+        if (this.gpsWatchId) {
+            navigator.geolocation.clearWatch(this.gpsWatchId);
+            this.gpsWatchId = null;
+        }
+        
+        if (this.gpsMarker) {
+            this.map.removeLayer(this.gpsMarker);
+            this.gpsMarker = null;
+        }
+        
+        this.updateGPSStatus('Tracking stopped', false);
+    }
+    
     onLocationSuccess(position) {
         const { latitude, longitude, accuracy } = position.coords;
         
@@ -544,7 +609,7 @@ class MapDrawingApp {
             this.gpsMarker = L.marker([latitude, longitude], {
                 icon: L.divIcon({
                     className: 'gps-marker',
-                    html: '<div style="width: 24px; height: 24px; background: #28a745; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3);"></div>',
+                    html: '<div style="width: 24px; height: 24px; background: #28a745; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); animation: pulse 2s infinite;"></div>',
                     iconSize: [30, 30],
                     iconAnchor: [15, 15]
                 })
@@ -574,17 +639,202 @@ class MapDrawingApp {
         }
     }
     
-    // Rest of the class methods remain the same...
-    // (Only showing the updated methods above. The rest of your existing methods should stay as they were)
+    onLocationError(error) {
+        const messages = {
+            1: 'Permission denied',
+            2: 'Position unavailable',
+            3: 'Timeout'
+        };
+        this.updateGPSStatus(messages[error.code] || 'GPS error', false);
+    }
     
-    // Keep all your existing methods like:
-    // updateGPSStatus, createLinePopup, selectFeature, deselectFeature, deleteLine, 
-    // calculateDistance, addToCoordinatesList, saveDrawing, loadDrawing, exportGeoJSON, etc.
-    // They should remain unchanged from your previous version.
+    updateGPSStatus(message, active) {
+        const indicator = document.getElementById('gps-indicator');
+        const statusText = document.getElementById('gps-status-text');
+        
+        statusText.textContent = `GPS: ${message}`;
+        indicator.classList.toggle('active', active);
+    }
     
-    // Only replace the GPS capture related methods as shown above.
+    selectFeatureAt(lat, lng) {
+        // Find line at clicked location
+        for (const line of this.lines) {
+            if (this.isPointNearLine(lat, lng, line.latlngs)) {
+                this.selectFeature(line);
+                return;
+            }
+        }
+        
+        // Deselect if nothing clicked
+        this.deselectFeature();
+    }
     
-    // Also update the addToCoordinatesList method to accept distance parameter:
+    selectFeature(feature) {
+        // Deselect current feature
+        this.deselectFeature();
+        
+        // Select new feature
+        this.selectedFeature = feature;
+        
+        if (feature.type === 'line') {
+            // Highlight line
+            feature.layer.setStyle(this.selectedStyle);
+            
+            // Open popup
+            feature.layer.openPopup();
+            
+            // Update drawing status
+            document.getElementById('drawing-status').textContent = 
+                `Line selected - Distance: ${feature.distance.toFixed(2)} meters`;
+        }
+    }
+    
+    deselectFeature() {
+        if (this.selectedFeature && this.selectedFeature.type === 'line') {
+            // Reset line style
+            this.selectedFeature.layer.setStyle({
+                ...this.lineStyle,
+                color: this.selectedFeature.color
+            });
+            
+            // Close popup
+            this.selectedFeature.layer.closePopup();
+        }
+        
+        this.selectedFeature = null;
+    }
+    
+    deleteFeatureAt(lat, lng) {
+        for (let i = this.lines.length - 1; i >= 0; i--) {
+            const line = this.lines[i];
+            if (this.isPointNearLine(lat, lng, line.latlngs)) {
+                this.deleteLine(line.id);
+                break;
+            }
+        }
+    }
+    
+    deleteLine(id) {
+        const index = this.lines.findIndex(line => line.id === id);
+        if (index !== -1) {
+            const line = this.lines[index];
+            
+            // Remove from map
+            this.lineLayer.removeLayer(line.layer);
+            this.markerLayer.removeLayer(line.startMarker);
+            if (line.endMarker) {
+                this.markerLayer.removeLayer(line.endMarker);
+            }
+            if (line.distanceLabel) {
+                this.distanceLabels.removeLayer(line.distanceLabel);
+            }
+            
+            // Remove from array
+            this.lines.splice(index, 1);
+            
+            // Deselect if it was selected
+            if (this.selectedFeature && this.selectedFeature.id === id) {
+                this.deselectFeature();
+            }
+            
+            // Update coordinates list
+            this.updateCoordinatesList();
+            
+            document.getElementById('drawing-status').textContent = 'Line deleted';
+        }
+    }
+    
+    deleteSelectedFeature() {
+        if (this.selectedFeature) {
+            this.deleteLine(this.selectedFeature.id);
+        }
+    }
+    
+    updateLineEndMarker(line, iconType) {
+        // Update icon and color
+        const newColor = iconType === 'start' ? '#007bff' : this.lineColor;
+        
+        if (line.endMarker) {
+            // Update end marker icon
+            const newIcon = L.divIcon({
+                className: 'end-marker',
+                html: `<div style="background: ${newColor}"></div>`,
+                iconSize: [20, 20]
+            });
+            line.endMarker.setIcon(newIcon);
+        }
+    }
+    
+    isPointNearLine(lat, lng, latlngs) {
+        if (latlngs.length < 2) return false;
+        
+        // Simple point-line distance calculation
+        for (let i = 0; i < latlngs.length - 1; i++) {
+            const p1 = latlngs[i];
+            const p2 = latlngs[i + 1];
+            
+            const distance = this.pointToLineDistance(lat, lng, p1.lat, p1.lng, p2.lat, p2.lng);
+            
+            // Convert distance to meters (rough approximation)
+            const distanceMeters = distance * 111320; // 1 degree ≈ 111,320 meters
+            
+            if (distanceMeters < 20) { // 20 meter threshold
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    pointToLineDistance(lat, lng, lat1, lng1, lat2, lng2) {
+        // Calculate distance from point to line segment (in degrees)
+        const A = lat - lat1;
+        const B = lng - lng1;
+        const C = lat2 - lat1;
+        const D = lng2 - lng1;
+        
+        const dot = A * C + B * D;
+        const lenSq = C * C + D * D;
+        let param = -1;
+        
+        if (lenSq !== 0) {
+            param = dot / lenSq;
+        }
+        
+        let xx, yy;
+        
+        if (param < 0) {
+            xx = lat1;
+            yy = lng1;
+        } else if (param > 1) {
+            xx = lat2;
+            yy = lng2;
+        } else {
+            xx = lat1 + param * C;
+            yy = lng1 + param * D;
+        }
+        
+        const dx = lat - xx;
+        const dy = lng - yy;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+    
+    calculateDistance(point1, point2) {
+        // Haversine formula for distance in meters
+        const R = 6371000; // Earth's radius in meters
+        const lat1 = point1.lat * Math.PI / 180;
+        const lat2 = point2.lat * Math.PI / 180;
+        const dLat = (point2.lat - point1.lat) * Math.PI / 180;
+        const dLng = (point2.lng - point1.lng) * Math.PI / 180;
+        
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1) * Math.cos(lat2) *
+                Math.sin(dLng/2) * Math.sin(dLng/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        
+        return R * c;
+    }
+    
     addToCoordinatesList(points, distance = null) {
         const container = document.getElementById('coordinates-container');
         
@@ -613,4 +863,302 @@ class MapDrawingApp {
             container.appendChild(distanceItem);
         }
     }
+    
+    updateCoordinatesList() {
+        const container = document.getElementById('coordinates-container');
+        
+        if (this.lines.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; color: #666; padding: 20px;">
+                    No line captured yet.<br>
+                    Use GPS Capture or Draw Line tools.
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = '<h4>Line Coordinates</h4>';
+        
+        // Show only the last line
+        const lastLine = this.lines[this.lines.length - 1];
+        
+        lastLine.latlngs.forEach((point, index) => {
+            const coordItem = document.createElement('div');
+            coordItem.className = 'coordinate-item';
+            coordItem.innerHTML = `
+                <span class="index">${index === 0 ? 'START' : 'END'}</span>
+                ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}
+            `;
+            container.appendChild(coordItem);
+        });
+        
+        if (lastLine.distance !== null) {
+            const distanceItem = document.createElement('div');
+            distanceItem.className = 'coordinate-item';
+            distanceItem.style.borderLeftColor = '#28a745';
+            distanceItem.innerHTML = `
+                <span class="index">DIST</span>
+                <strong>${lastLine.distance.toFixed(2)} meters</strong>
+            `;
+            container.appendChild(distanceItem);
+        }
+    }
+    
+    saveDrawing() {
+        const drawingData = {
+            lines: this.lines.map(line => ({
+                id: line.id,
+                type: line.type,
+                latlngs: line.latlngs,
+                startIcon: line.startIcon,
+                endIcon: line.endIcon,
+                color: line.color,
+                distance: line.distance,
+                created: line.created,
+                capturedByGPS: line.capturedByGPS || false
+            })),
+            metadata: {
+                version: '2.0',
+                savedAt: new Date().toISOString(),
+                totalLines: this.lines.length,
+                totalPoints: this.lines.reduce((sum, line) => sum + line.latlngs.length, 0)
+            }
+        };
+        
+        // Convert to JSON
+        const json = JSON.stringify(drawingData, null, 2);
+        
+        // Create download link
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'map-drawing-' + new Date().toISOString().slice(0, 10) + '.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        // Also save to localStorage
+        localStorage.setItem('mapDrawing', json);
+        
+        document.getElementById('drawing-status').textContent = 'Drawing saved successfully!';
+    }
+    
+    loadDrawing() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        
+        input.onchange = (e) => {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            
+            reader.onload = (event) => {
+                try {
+                    const data = JSON.parse(event.target.result);
+                    this.loadDrawingData(data);
+                } catch (error) {
+                    alert('Error loading file: ' + error.message);
+                }
+            };
+            
+            reader.readAsText(file);
+        };
+        
+        input.click();
+    }
+    
+    loadDrawingData(data) {
+        // Clear existing lines
+        this.lines.forEach(line => {
+            this.lineLayer.removeLayer(line.layer);
+            if (line.startMarker) this.markerLayer.removeLayer(line.startMarker);
+            if (line.endMarker) this.markerLayer.removeLayer(line.endMarker);
+            if (line.distanceLabel) this.distanceLabels.removeLayer(line.distanceLabel);
+        });
+        
+        this.lines = [];
+        
+        // Load new lines
+        data.lines.forEach(lineData => {
+            const points = lineData.latlngs.map(p => [p.lat, p.lng]);
+            
+            const line = L.polyline(points, {
+                color: lineData.color || this.lineColor,
+                weight: 4,
+                opacity: 0.8
+            }).addTo(this.lineLayer);
+            
+            // Create markers
+            const startPoint = lineData.latlngs[0];
+            const endPoint = lineData.latlngs[lineData.latlngs.length - 1];
+            
+            const startMarker = this.createMarker(startPoint.lat, startPoint.lng, 'start');
+            const endMarker = this.createMarker(endPoint.lat, endPoint.lng, 'end');
+            
+            startMarker.addTo(this.markerLayer);
+            endMarker.addTo(this.markerLayer);
+            
+            // Calculate distance if not present
+            if (!lineData.distance && lineData.latlngs.length === 2) {
+                lineData.distance = this.calculateDistance(lineData.latlngs[0], lineData.latlngs[1]);
+            }
+            
+            // Create line object
+            const lineObj = {
+                ...lineData,
+                layer: line,
+                startMarker,
+                endMarker
+            };
+            
+            // Add distance label
+            if (lineData.distance) {
+                this.addDistanceLabel(lineObj);
+            }
+            
+            // Bind popup
+            const popupContent = this.createLinePopup(lineObj);
+            line.bindPopup(popupContent);
+            
+            this.lines.push(lineObj);
+        });
+        
+        // Update coordinates list
+        this.updateCoordinatesList();
+        
+        document.getElementById('drawing-status').textContent = `Loaded ${data.lines.length} lines`;
+    }
+    
+    exportGeoJSON() {
+        const geoJSON = {
+            type: "FeatureCollection",
+            features: this.lines.map(line => ({
+                type: "Feature",
+                geometry: {
+                    type: "LineString",
+                    coordinates: line.latlngs.map(p => [p.lng, p.lat]) // GeoJSON uses [lng, lat]
+                },
+                properties: {
+                    id: line.id,
+                    type: line.type,
+                    startIcon: line.startIcon,
+                    endIcon: line.endIcon,
+                    color: line.color,
+                    distance: line.distance,
+                    created: line.created,
+                    capturedByGPS: line.capturedByGPS || false
+                }
+            }))
+        };
+        
+        this.downloadFile(JSON.stringify(geoJSON, null, 2), 'drawing.geojson', 'application/geo+json');
+    }
+    
+    exportKML() {
+        const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Map Drawing Export</name>
+    <description>Exported from Map Drawing App</description>
+    ${this.lines.map((line, i) => `
+    <Placemark>
+      <name>Line ${i + 1}</name>
+      <description>Distance: ${line.distance ? line.distance.toFixed(2) : 'Unknown'} meters</description>
+      <Style>
+        <LineStyle>
+          <color>${this.rgbToKMLColor(line.color)}</color>
+          <width>4</width>
+        </LineStyle>
+      </Style>
+      <LineString>
+        <coordinates>
+          ${line.latlngs.map(p => `${p.lng},${p.lat},0`).join(' ')}
+        </coordinates>
+      </LineString>
+    </Placemark>
+    `).join('')}
+  </Document>
+</kml>`;
+        
+        this.downloadFile(kml, 'drawing.kml', 'application/vnd.google-earth.kml+xml');
+    }
+    
+    exportGPX() {
+        const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Map Drawing App" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Map Drawing Export</name>
+    <time>${new Date().toISOString()}</time>
+  </metadata>
+  ${this.lines.map((line, i) => `
+  <trk>
+    <name>Line ${i + 1}</name>
+    <desc>Distance: ${line.distance ? line.distance.toFixed(2) : 'Unknown'} meters</desc>
+    <trkseg>
+      ${line.latlngs.map(p => `
+      <trkpt lat="${p.lat}" lon="${p.lng}">
+        <ele>0</ele>
+      </trkpt>
+      `).join('')}
+    </trkseg>
+  </trk>
+  `).join('')}
+</gpx>`;
+        
+        this.downloadFile(gpx, 'drawing.gpx', 'application/gpx+xml');
+    }
+    
+    rgbToKMLColor(rgb) {
+        // Convert #RRGGBB to AABBGGRR (KML format)
+        if (rgb.startsWith('#')) {
+            const r = rgb.slice(1, 3);
+            const g = rgb.slice(3, 5);
+            const b = rgb.slice(5, 7);
+            return `ff${b}${g}${r}`; // Alpha + Blue + Green + Red
+        }
+        return 'ff0000ff'; // Default: opaque blue
+    }
+    
+    downloadFile(content, filename, mimeType) {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        document.getElementById('drawing-status').textContent = `Exported as ${filename}`;
+    }
 }
+
+// Initialize app when page loads
+let app;
+document.addEventListener('DOMContentLoaded', () => {
+    app = new MapDrawingApp();
+    window.app = app; // Make app available globally for button callbacks
+    
+    // Load auto-saved drawing if exists
+    const saved = localStorage.getItem('mapDrawing');
+    if (saved) {
+        try {
+            const data = JSON.parse(saved);
+            app.loadDrawingData(data);
+        } catch (e) {
+            console.log('No valid auto-save found');
+        }
+    }
+});
+
+// Handle page unload
+window.addEventListener('beforeunload', (e) => {
+    if (app && (app.captureState !== 'idle' || app.currentLine)) {
+        e.preventDefault();
+        e.returnValue = 'You are currently drawing or capturing. Are you sure you want to leave?';
+        return e.returnValue;
+    }
+});
