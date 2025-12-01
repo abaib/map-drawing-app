@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Map Drawing with GPS Tracking</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- Leaflet CSS & JS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -11,6 +11,10 @@
     
     <!-- Font Awesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#007bff">
     
     <style>
         * {
@@ -24,6 +28,7 @@
             height: 100vh;
             display: flex;
             flex-direction: column;
+            overflow: hidden;
         }
         
         #app-container {
@@ -73,6 +78,9 @@
             align-items: center;
             gap: 5px;
             transition: background 0.3s;
+            flex: 1;
+            justify-content: center;
+            text-align: center;
         }
         
         .btn:hover {
@@ -146,6 +154,7 @@
             border-radius: 8px;
             padding: 15px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 15px;
         }
         
         .coordinates-list h3 {
@@ -210,67 +219,126 @@
             100% { opacity: 1; }
         }
         
-        .line-info {
-            background: rgba(255, 255, 255, 0.95);
-            padding: 10px;
-            border-radius: 4px;
-            margin-top: 5px;
-            font-size: 12px;
-            border-left: 3px solid #007bff;
-        }
-        
-        .drawing-line {
-            stroke-dasharray: 10, 10;
-            animation: dash 1s linear infinite;
-        }
-        
-        @keyframes dash {
-            to {
-                stroke-dashoffset: 20;
-            }
+        .drawing-status {
+            font-weight: bold;
+            color: #007bff;
         }
         
         /* Custom markers */
         .start-marker {
-            background: #007bff;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            border: 3px solid white;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            background: transparent !important;
+            border: none !important;
         }
         
         .end-marker {
-            background: #dc3545;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            border: 3px solid white;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            background: transparent !important;
+            border: none !important;
         }
         
         .gps-marker {
-            background: #28a745;
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            border: 3px solid white;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-            animation: pulse 2s infinite;
+            background: transparent !important;
+            border: none !important;
         }
         
-        .popup-content {
+        .distance-label {
+            background: transparent !important;
+            border: none !important;
+        }
+        
+        .distance-label div {
+            transform: translateY(-50%);
+            pointer-events: none;
+            user-select: none;
+        }
+        
+        /* Popup styling */
+        .leaflet-popup-content {
             min-width: 200px;
         }
         
+        .popup-content {
+            font-size: 14px;
+        }
+        
         .popup-content button {
-            margin-top: 5px;
-            padding: 4px 8px;
+            margin-top: 10px;
+            padding: 5px 10px;
             background: #dc3545;
             color: white;
             border: none;
             border-radius: 3px;
             cursor: pointer;
+        }
+        
+        .popup-content button:hover {
+            background: #c82333;
+        }
+        
+        /* GPS instructions */
+        .gps-instructions {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;
+            line-height: 1.4;
+        }
+        
+        .gps-instructions ol {
+            margin-left: 15px;
+            padding-left: 0;
+        }
+        
+        .gps-instructions li {
+            margin-bottom: 3px;
+        }
+        
+        /* Responsive design */
+        @media (max-width: 768px) {
+            #sidebar {
+                width: 280px;
+            }
+            
+            .btn {
+                padding: 10px;
+                font-size: 14px;
+            }
+            
+            .status-bar {
+                flex-direction: column;
+                gap: 5px;
+                align-items: flex-start;
+            }
+            
+            .gps-status {
+                flex-wrap: wrap;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            #app-container {
+                flex-direction: column;
+            }
+            
+            #sidebar {
+                width: 100%;
+                height: 40vh;
+                order: 2;
+            }
+            
+            #map-container {
+                height: 60vh;
+                order: 1;
+            }
+        }
+        
+        /* Export buttons container */
+        .export-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .export-buttons .btn {
+            flex: 1;
         }
     </style>
 </head>
@@ -290,68 +358,78 @@
                 </button>
             </div>
             
-<div class="control-panel">
-    <h3>GPS Capture</h3>
-    <div>
-        <button id="start-capture-btn" class="btn">
-            <i class="fas fa-crosshairs"></i> Start GPS Capture
-        </button>
-        <button id="stop-capture-btn" class="btn danger" style="display: none;">
-            <i class="fas fa-crosshairs"></i> Capture Start Point
-        </button>
-    </div>
-    
-    <div class="gps-instructions" style="margin-top: 10px; font-size: 12px; color: #666;">
-        <strong>How to use:</strong>
-        <ol style="margin-left: 15px; padding-left: 0;">
-            <li>Click "Start GPS Capture"</li>
-            <li>Walk to start point</li>
-            <li>Click "Capture Start Point"</li>
-            <li>Walk to end point</li>
-            <li>Click "Capture End Point"</li>
-        </ol>
-        <p style="margin: 5px 0 0 0;">Line with distance will be created automatically.</p>
-    </div>
-    
-    <div style="margin-top: 15px;">
-        <label style="font-size: 14px; display: block; margin-bottom: 5px;">Line Color:</label>
-        <input type="color" id="line-color" value="#007bff" style="width: 100%; height: 40px;">
-    </div>
-    
-    <div style="margin-top: 15px;">
-        <label style="font-size: 14px; display: block; margin-bottom: 5px;">End Marker:</label>
-        <div class="icon-selector">
-            <button class="icon-btn active" data-icon="circle"><i class="fas fa-circle"></i></button>
-            <button class="icon-btn" data-icon="square"><i class="fas fa-square"></i></button>
-            <button class="icon-btn" data-icon="triangle"><i class="fas fa-play"></i></button>
-            <button class="icon-btn" data-icon="flag"><i class="fas fa-flag"></i></button>
-            <button class="icon-btn" data-icon="star"><i class="fas fa-star"></i></button>
-            <button class="icon-btn" data-icon="crosshairs"><i class="fas fa-crosshairs"></i></button>
-        </div>
-    </div>
-</div>
+            <div class="control-panel">
+                <h3>GPS Capture</h3>
+                <div>
+                    <button id="start-capture-btn" class="btn">
+                        <i class="fas fa-crosshairs"></i> Start GPS Capture
+                    </button>
+                    <button id="stop-capture-btn" class="btn danger" style="display: none;">
+                        <i class="fas fa-crosshairs"></i> Capture Start Point
+                    </button>
+                </div>
+                
+                <div class="gps-instructions">
+                    <strong>How to use:</strong>
+                    <ol>
+                        <li>Click "Start GPS Capture"</li>
+                        <li>Walk to start point</li>
+                        <li>Click "Capture Start Point"</li>
+                        <li>Walk to end point</li>
+                        <li>Click "Capture End Point"</li>
+                    </ol>
+                    <p style="margin: 5px 0 0 0;">Line with distance will be created automatically.</p>
+                </div>
+                
+                <div style="margin-top: 15px;">
+                    <label style="font-size: 14px; display: block; margin-bottom: 5px;">Line Color:</label>
+                    <input type="color" id="line-color" value="#007bff" style="width: 100%; height: 40px;">
+                </div>
+                
+                <div style="margin-top: 15px;">
+                    <label style="font-size: 14px; display: block; margin-bottom: 5px;">End Marker:</label>
+                    <div class="icon-selector">
+                        <button class="icon-btn active" data-icon="circle"><i class="fas fa-circle"></i></button>
+                        <button class="icon-btn" data-icon="square"><i class="fas fa-square"></i></button>
+                        <button class="icon-btn" data-icon="triangle"><i class="fas fa-play"></i></button>
+                        <button class="icon-btn" data-icon="flag"><i class="fas fa-flag"></i></button>
+                        <button class="icon-btn" data-icon="star"><i class="fas fa-star"></i></button>
+                        <button class="icon-btn" data-icon="crosshairs"><i class="fas fa-crosshairs"></i></button>
+                        <button class="icon-btn" data-icon="map-pin"><i class="fas fa-map-pin"></i></button>
+                        <button class="icon-btn" data-icon="home"><i class="fas fa-home"></i></button>
+                    </div>
+                </div>
+            </div>
             
-<div class="coordinates-list">
-    <h3>Line Information</h3>
-    <div id="coordinates-container">
-        <!-- Coordinates and distance will be shown here -->
-        <div style="text-align: center; color: #666; padding: 20px;">
-            No line captured yet.<br>
-            Use GPS Capture or Draw Line tools.
-        </div>
-    </div>
-</div>
+            <div class="coordinates-list">
+                <h3>Line Information</h3>
+                <div id="coordinates-container">
+                    <div style="text-align: center; color: #666; padding: 20px;">
+                        No line captured yet.<br>
+                        Use GPS Capture or Draw Line tools.
+                    </div>
+                </div>
+            </div>
             
-            <div style="margin-top: 15px;">
+            <div class="control-panel">
+                <h3>Save & Export</h3>
                 <button id="save-btn" class="btn">
                     <i class="fas fa-save"></i> Save Drawing
                 </button>
                 <button id="load-btn" class="btn">
                     <i class="fas fa-folder-open"></i> Load Drawing
                 </button>
-                <button id="export-btn" class="btn">
-                    <i class="fas fa-download"></i> Export GeoJSON
-                </button>
+                <div class="export-buttons">
+                    <button id="export-btn" class="btn">
+                        <i class="fas fa-download"></i> GeoJSON
+                    </button>
+                    <button id="export-kml-btn" class="btn" onclick="app.exportKML()">
+                        <i class="fas fa-download"></i> KML
+                    </button>
+                    <button id="export-gpx-btn" class="btn" onclick="app.exportGPX()">
+                        <i class="fas fa-download"></i> GPX
+                    </button>
+                </div>
             </div>
         </div>
         
@@ -367,7 +445,9 @@
                     <span id="gps-coords">Lat: --, Lng: --</span>
                     <span id="gps-accuracy">Accuracy: -- meters</span>
                 </div>
-                <div id="drawing-status">Click on map to start drawing a line</div>
+                <div class="drawing-status" id="drawing-status">
+                    Click on map to start drawing a line
+                </div>
             </div>
         </div>
     </div>
