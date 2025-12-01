@@ -12,10 +12,6 @@
     <!-- Font Awesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- PWA Manifest -->
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#007bff">
-    
     <style>
         * {
             margin: 0;
@@ -38,7 +34,7 @@
         }
         
         #sidebar {
-            width: 320px;
+            width: 350px;
             background: #f8f9fa;
             border-right: 1px solid #dee2e6;
             display: flex;
@@ -117,6 +113,38 @@
             font-size: 16px;
         }
         
+        .map-layers {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .layer-btn {
+            flex: 1;
+            padding: 8px;
+            background: white;
+            border: 2px solid #dee2e6;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        .layer-btn.active {
+            border-color: #007bff;
+            background: #e7f1ff;
+        }
+        
+        .gps-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .gps-buttons .btn {
+            flex: 1;
+        }
+        
         .icon-selector {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -147,7 +175,7 @@
             background: #e7f1ff;
         }
         
-        .coordinates-list {
+        .lines-table-container {
             flex: 1;
             overflow-y: auto;
             background: white;
@@ -157,26 +185,56 @@
             margin-bottom: 15px;
         }
         
-        .coordinates-list h3 {
+        .lines-table-container h3 {
             margin-bottom: 10px;
             color: #333;
             font-size: 16px;
         }
         
-        .coordinate-item {
-            padding: 8px;
-            margin: 5px 0;
-            background: #f8f9fa;
-            border-radius: 4px;
-            border-left: 3px solid #007bff;
-            font-family: monospace;
+        #lines-table {
+            width: 100%;
+            border-collapse: collapse;
             font-size: 12px;
         }
         
-        .coordinate-item .index {
-            font-weight: bold;
-            color: #007bff;
-            margin-right: 5px;
+        #lines-table th {
+            background: #f8f9fa;
+            padding: 8px;
+            text-align: left;
+            border-bottom: 2px solid #dee2e6;
+            font-weight: 600;
+            color: #333;
+            position: sticky;
+            top: 0;
+        }
+        
+        #lines-table td {
+            padding: 8px;
+            border-bottom: 1px solid #dee2e6;
+            vertical-align: top;
+        }
+        
+        #lines-table tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .coord-cell {
+            font-family: monospace;
+            font-size: 11px;
+            color: #666;
+        }
+        
+        input[type="number"], select {
+            width: 100%;
+            padding: 4px;
+            border: 1px solid #dee2e6;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        
+        input[type="number"]:focus, select:focus {
+            outline: none;
+            border-color: #007bff;
         }
         
         .status-bar {
@@ -222,25 +280,12 @@
         .drawing-status {
             font-weight: bold;
             color: #007bff;
+            text-align: right;
+            flex: 1;
         }
         
         /* Custom markers */
-        .start-marker {
-            background: transparent !important;
-            border: none !important;
-        }
-        
-        .end-marker {
-            background: transparent !important;
-            border: none !important;
-        }
-        
-        .gps-marker {
-            background: transparent !important;
-            border: none !important;
-        }
-        
-        .distance-label {
+        .start-marker, .end-marker, .gps-marker, .distance-label {
             background: transparent !important;
             border: none !important;
         }
@@ -274,27 +319,21 @@
             background: #c82333;
         }
         
-        /* GPS instructions */
-        .gps-instructions {
+        /* Export buttons container */
+        .export-buttons {
+            display: flex;
+            gap: 10px;
             margin-top: 10px;
-            font-size: 12px;
-            color: #666;
-            line-height: 1.4;
         }
         
-        .gps-instructions ol {
-            margin-left: 15px;
-            padding-left: 0;
-        }
-        
-        .gps-instructions li {
-            margin-bottom: 3px;
+        .export-buttons .btn {
+            flex: 1;
         }
         
         /* Responsive design */
         @media (max-width: 768px) {
             #sidebar {
-                width: 280px;
+                width: 300px;
             }
             
             .btn {
@@ -302,14 +341,12 @@
                 font-size: 14px;
             }
             
-            .status-bar {
-                flex-direction: column;
-                gap: 5px;
-                align-items: flex-start;
+            #lines-table {
+                font-size: 11px;
             }
             
-            .gps-status {
-                flex-wrap: wrap;
+            #lines-table th, #lines-table td {
+                padding: 6px;
             }
         }
         
@@ -320,25 +357,14 @@
             
             #sidebar {
                 width: 100%;
-                height: 40vh;
+                height: 50vh;
                 order: 2;
             }
             
             #map-container {
-                height: 60vh;
+                height: 50vh;
                 order: 1;
             }
-        }
-        
-        /* Export buttons container */
-        .export-buttons {
-            display: flex;
-            gap: 10px;
-            margin-top: 10px;
-        }
-        
-        .export-buttons .btn {
-            flex: 1;
         }
     </style>
 </head>
@@ -359,26 +385,24 @@
             </div>
             
             <div class="control-panel">
-                <h3>GPS Capture</h3>
-                <div>
-                    <button id="start-capture-btn" class="btn">
-                        <i class="fas fa-crosshairs"></i> Start GPS Capture
+                <h3>Map Layers</h3>
+                <div class="map-layers">
+                    <button id="street-layer-btn" class="layer-btn active">
+                        Street Map
                     </button>
-                    <button id="stop-capture-btn" class="btn danger" style="display: none;">
-                        <i class="fas fa-crosshairs"></i> Capture Start Point
+                    <button id="satellite-layer-btn" class="layer-btn">
+                        Satellite
                     </button>
                 </div>
                 
-                <div class="gps-instructions">
-                    <strong>How to use:</strong>
-                    <ol>
-                        <li>Click "Start GPS Capture"</li>
-                        <li>Walk to start point</li>
-                        <li>Click "Capture Start Point"</li>
-                        <li>Walk to end point</li>
-                        <li>Click "Capture End Point"</li>
-                    </ol>
-                    <p style="margin: 5px 0 0 0;">Line with distance will be created automatically.</p>
+                <h3>GPS Capture</h3>
+                <div class="gps-buttons">
+                    <button id="capture-start-btn" class="btn">
+                        <i class="fas fa-map-marker-alt"></i> Capture Start Point
+                    </button>
+                    <button id="capture-end-btn" class="btn" style="display: none;">
+                        <i class="fas fa-flag-checkered"></i> Capture End Point
+                    </button>
                 </div>
                 
                 <div style="margin-top: 15px;">
@@ -395,19 +419,30 @@
                         <button class="icon-btn" data-icon="flag"><i class="fas fa-flag"></i></button>
                         <button class="icon-btn" data-icon="star"><i class="fas fa-star"></i></button>
                         <button class="icon-btn" data-icon="crosshairs"><i class="fas fa-crosshairs"></i></button>
-                        <button class="icon-btn" data-icon="map-pin"><i class="fas fa-map-pin"></i></button>
-                        <button class="icon-btn" data-icon="home"><i class="fas fa-home"></i></button>
                     </div>
                 </div>
             </div>
             
-            <div class="coordinates-list">
-                <h3>Line Information</h3>
-                <div id="coordinates-container">
-                    <div style="text-align: center; color: #666; padding: 20px;">
-                        No line captured yet.<br>
-                        Use GPS Capture or Draw Line tools.
-                    </div>
+            <div class="lines-table-container">
+                <h3>Lines Table</h3>
+                <div style="overflow-x: auto;">
+                    <table id="lines-table">
+                        <thead>
+                            <tr>
+                                <th>Line</th>
+                                <th>Start Coordinates</th>
+                                <th>End Coordinates</th>
+                                <th>Length (m)</th>
+                                <th>Depth</th>
+                                <th>Width</th>
+                                <th>Excavation Type</th>
+                                <th>Road Type</th>
+                            </tr>
+                        </thead>
+                        <tbody id="lines-table-body">
+                            <!-- Lines will be added here -->
+                        </tbody>
+                    </table>
                 </div>
             </div>
             
@@ -420,14 +455,11 @@
                     <i class="fas fa-folder-open"></i> Load Drawing
                 </button>
                 <div class="export-buttons">
-                    <button id="export-btn" class="btn">
-                        <i class="fas fa-download"></i> GeoJSON
+                    <button id="export-excel-btn" class="btn" onclick="app.exportExcel()">
+                        <i class="fas fa-file-excel"></i> Excel
                     </button>
-                    <button id="export-kml-btn" class="btn" onclick="app.exportKML()">
-                        <i class="fas fa-download"></i> KML
-                    </button>
-                    <button id="export-gpx-btn" class="btn" onclick="app.exportGPX()">
-                        <i class="fas fa-download"></i> GPX
+                    <button id="export-csv-btn" class="btn" onclick="app.exportCSV()">
+                        <i class="fas fa-file-csv"></i> CSV
                     </button>
                 </div>
             </div>
