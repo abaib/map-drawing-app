@@ -25,6 +25,13 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+        
+        html {
+            height: 100%;
+            width: 100%;
         }
         
         .app-container {
@@ -67,6 +74,13 @@
         #map {
             width: 100%;
             height: 100%;
+            min-height: 500px;
+            background: #f0f0f0;
+        }
+        
+        .leaflet-container {
+            height: 100%;
+            width: 100%;
         }
         
         .section {
@@ -342,6 +356,217 @@
         .icon-csv::before { content: "📄"; }
         .icon-nav::before { content: "🧭"; }
         
+        /* Camera Modal */
+        .camera-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .camera-modal.active {
+            display: flex;
+        }
+        
+        .camera-container {
+            position: relative;
+            max-width: 90vw;
+            max-height: 90vh;
+        }
+        
+        #cameraVideo {
+            width: 100%;
+            height: auto;
+            max-height: 80vh;
+            border-radius: 8px;
+        }
+        
+        #cameraCanvas {
+            display: none;
+        }
+        
+        .camera-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 16px;
+        }
+        
+        .camera-btn {
+            padding: 16px 32px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .camera-btn-capture {
+            background: #10b981;
+            color: white;
+        }
+        
+        .camera-btn-capture:hover {
+            background: #059669;
+        }
+        
+        .camera-btn-close {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .camera-btn-close:hover {
+            background: #dc2626;
+        }
+        
+        /* Photo overlay styles */
+        .photo-overlay {
+            position: absolute;
+            pointer-events: none;
+        }
+        
+        .compass-overlay {
+            top: 20px;
+            left: 20px;
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            border: 3px solid #3b82f6;
+        }
+        
+        .info-overlay {
+            bottom: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            line-height: 1.6;
+        }
+        
+        .info-overlay-label {
+            font-weight: bold;
+            color: #374151;
+        }
+        
+        .info-overlay-value {
+            color: #1f2937;
+        }
+        
+        .minimap-overlay {
+            position: absolute;
+            bottom: 140px;
+            right: 20px;
+            width: 150px;
+            height: 150px;
+            border: 3px solid white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        /* Photo Gallery */
+        .photo-gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .photo-thumbnail {
+            position: relative;
+            width: 100%;
+            padding-top: 100%;
+            background: #f3f4f6;
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .photo-thumbnail:hover {
+            transform: scale(1.05);
+        }
+        
+        .photo-thumbnail img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .photo-delete {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 10px;
+            cursor: pointer;
+            z-index: 1;
+        }
+        
+        /* Photo viewer modal */
+        .photo-viewer {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 10001;
+            justify-content: center;
+            align-items: center;
+            padding: 40px;
+        }
+        
+        .photo-viewer.active {
+            display: flex;
+        }
+        
+        .photo-viewer img {
+            max-width: 100%;
+            max-height: 100%;
+            border-radius: 8px;
+        }
+        
+        .photo-viewer-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        
         @media (max-width: 768px) {
             .app-container {
                 flex-direction: column;
@@ -432,6 +657,17 @@
                     </div>
                 </div>
 
+                <!-- Camera Section -->
+                <div class="section">
+                    <div class="section-title">📷 Camera</div>
+                    <button class="btn btn-primary" id="takePhotoBtn" style="margin-bottom: 8px;">
+                        📸 Take Photo
+                    </button>
+                    <div id="photoCount" style="font-size: 12px; color: #6b7280; margin-top: 8px;">
+                        Photos: 0
+                    </div>
+                </div>
+
                 <!-- Line Information Table -->
                 <div class="section">
                     <div class="section-title">Line Information</div>
@@ -480,6 +716,24 @@
         <div class="map-container">
             <div id="map"></div>
         </div>
+    </div>
+
+    <!-- Camera Modal -->
+    <div class="camera-modal" id="cameraModal">
+        <div class="camera-container">
+            <video id="cameraVideo" autoplay playsinline></video>
+            <canvas id="cameraCanvas"></canvas>
+            <div class="camera-controls">
+                <button class="camera-btn camera-btn-capture" id="captureBtn">📸 Capture</button>
+                <button class="camera-btn camera-btn-close" id="closeCameraBtn">❌ Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Photo Viewer Modal -->
+    <div class="photo-viewer" id="photoViewer">
+        <img id="photoViewerImg" src="" alt="Photo">
+        <button class="photo-viewer-close" id="closePhotoViewer">Close</button>
     </div>
 
     <!-- Leaflet JS -->
