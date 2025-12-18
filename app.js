@@ -26,6 +26,7 @@ class MapDrawingApp {
         this.initializeMap();
         this.setupEventListeners();
         this.startGPSTracking();
+        this.setupDeviceOrientation();
     }
     
     initializeMap() {
@@ -110,6 +111,12 @@ class MapDrawingApp {
         document.getElementById('loadInput').addEventListener('change', (e) => this.loadDrawing(e));
         document.getElementById('excelBtn').addEventListener('click', () => this.exportToExcel());
         document.getElementById('csvBtn').addEventListener('click', () => this.exportToCSV());
+        
+        // Camera buttons
+        document.getElementById('takePhotoBtn').addEventListener('click', () => this.openCamera());
+        document.getElementById('closeCameraBtn').addEventListener('click', () => this.closeCamera());
+        document.getElementById('captureBtn').addEventListener('click', () => this.capturePhoto());
+        document.getElementById('closePhotoViewer').addEventListener('click', () => this.closePhotoViewer());
     }
     
     setMode(mode) {
@@ -817,6 +824,242 @@ class MapDrawingApp {
         a.download = `map-data-${new Date().toISOString().split('T')[0]}.xls`;
         a.click();
         URL.revokeObjectURL(url);
+    }
+    
+    // Device orientation for compass
+    setupDeviceOrientation() {
+        if (window.DeviceOrientationEvent) {
+            window.addEventListener('deviceorientation', (event) => {
+                // Get compass heading (0-360 degrees)
+                this.deviceOrientation = event.alpha || event.webkitCompassHeading || 0;
+            });
+        }
+    }
+    
+    // Camera functions
+    async openCamera() {
+        if (!this.currentGpsPosition) {
+            alert('GPS position not available. Please wait for GPS signal before taking photos.');
+            return;
+        }
+        
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { 
+                    facingMode: 'environment',
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
+                }
+            });
+            
+            this.cameraStream = stream;
+            const video = document.getElementById('cameraVideo');
+            video.srcObject = stream;
+            
+            document.getElementById('cameraModal').classList.add('active');
+        } catch (error) {
+            console.error('Camera error:', error);
+            alert('Could not access camera: ' + error.message);
+        }
+    }
+    
+    closeCamera() {
+        if (this.cameraStream) {
+            this.cameraStream.getTracks().forEach(track => track.stop());
+            this.cameraStream = null;
+        }
+        
+        document.getElementById('cameraModal').classList.remove('active');
+    }
+    
+    async capturePhoto() {
+        if (!this.currentGpsPosition) {
+            alert('GPS position lost. Please try again.');
+            return;
+        }
+        
+        const video = document.getElementById('cameraVideo');
+        const canvas = document.getElementById('cameraCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Set canvas size to video size
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        // Draw video frame
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // Add overlays
+        this.addPhotoOverlays(ctx, canvas.width, canvas.height);
+        
+        // Convert to data URL
+        const photoDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        
+        // Create photo object
+        const photo = {
+            id: `P${this.photos.length + 1}`,
+            dataUrl: photoDataUrl,
+            gps: { ...this.currentGpsPosition },
+            timestamp: new Date().toISOString(),
+            heading: this.deviceOrientation
+        };
+        
+        this.photos.push(photo);
+        this.addPhotoMarker(photo);
+        this.updatePhotoCount();
+        
+        // Close camera
+        this.closeCamera();
+        
+        alert('Photo captured successfully!');
+    }
+    
+    addPhotoOverlays(ctx, width, height) {
+        const now = new Date();
+        const dateStr = now.toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: '2-digit', 
+            day: '2-digit' 
+        });
+        const timeStr = now.toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit' 
+        });
+        
+        // Info box (bottom right)
+        const boxWidth = 280;
+        const boxHeight = 150;
+        const boxX = width - boxWidth - 20;
+        const boxY = height - boxHeight - 20;
+        
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+        
+        ctx.fillStyle = '#1f2937';
+        ctx.font = 'bold 16px monospace';
+        ctx.fillText('📍 GPS Coordinates:', boxX + 10, boxY + 25);
+        
+        ctx.font = '14px monospace';
+        ctx.fillText(`Lat: ${this.currentGpsPosition.lat.toFixed(6)}`, boxX + 10, boxY + 50);
+        ctx.fillText(`Lng: ${this.currentGpsPosition.lng.toFixed(6)}`, boxX + 10, boxY + 70);
+        
+        ctx.font = 'bold 14px monospace';
+        ctx.fillText('📅 ' + dateStr, boxX + 10, boxY + 95);
+        ctx.fillText('🕐 ' + timeStr, boxX + 10, boxY + 115);
+        
+        // Mini map (above info box)
+        const miniMapSize = 150;
+        const miniMapX = width - miniMapSize - 20;
+        const miniMapY = boxY - miniMapSize - 10;
+        
+        ctx.fillStyle = '#f0f0f0';
+        ctx.fillRect(miniMapX, miniMapY, miniMapSize, miniMapSize);
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(miniMapX, miniMapY, miniMapSize, miniMapSize);
+        
+        // Draw crosshair in center of mini map
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2;
+        const centerX = miniMapX + miniMapSize / 2;
+        const centerY = miniMapY + miniMapSize / 2;
+        
+        ctx.beginPath();
+        ctx.moveTo(centerX - 10, centerY);
+        ctx.lineTo(centerX + 10, centerY);
+        ctx.moveTo(centerX, centerY - 10);
+        ctx.lineTo(centerX, centerY + 10);
+        ctx.stroke();
+        
+        ctx.fillStyle = '#3b82f6';
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, 5, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Compass (top left)
+        const compassSize = 80;
+        const compassX = 20 + compassSize / 2;
+        const compassY = 20 + compassSize / 2;
+        
+        // Compass background
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        ctx.beginPath();
+        ctx.arc(compassX, compassY, compassSize / 2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(compassX, compassY, compassSize / 2, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Draw compass arrow
+        ctx.save();
+        ctx.translate(compassX, compassY);
+        ctx.rotate((this.deviceOrientation - 90) * Math.PI / 180);
+        
+        // North arrow
+        ctx.fillStyle = '#ef4444';
+        ctx.beginPath();
+        ctx.moveTo(0, -25);
+        ctx.lineTo(-8, 5);
+        ctx.lineTo(8, 5);
+        ctx.closePath();
+        ctx.fill();
+        
+        ctx.restore();
+        
+        // Draw N
+        ctx.fillStyle = '#1f2937';
+        ctx.font = 'bold 20px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('N', compassX, compassY - 35);
+        
+        // Heading text
+        ctx.font = 'bold 14px monospace';
+        ctx.fillText(`${Math.round(this.deviceOrientation)}°`, compassX, compassY + 50);
+    }
+    
+    addPhotoMarker(photo) {
+        const cameraIcon = L.divIcon({
+            className: 'camera-marker',
+            html: '<div style="font-size: 24px;">📷</div>',
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+        });
+        
+        const marker = L.marker([photo.gps.lat, photo.gps.lng], {
+            icon: cameraIcon
+        }).addTo(this.map);
+        
+        marker.on('click', () => {
+            this.viewPhoto(photo);
+        });
+        
+        this.photoMarkers.push({ photo: photo, marker: marker });
+        
+        // Counter-rotate if map is rotated
+        if (marker._icon) {
+            marker._icon.style.transformOrigin = 'center center';
+            marker._icon.style.transform = `rotate(${-this.mapRotation}deg)`;
+        }
+    }
+    
+    viewPhoto(photo) {
+        document.getElementById('photoViewerImg').src = photo.dataUrl;
+        document.getElementById('photoViewer').classList.add('active');
+    }
+    
+    closePhotoViewer() {
+        document.getElementById('photoViewer').classList.remove('active');
+    }
+    
+    updatePhotoCount() {
+        document.getElementById('photoCount').textContent = `Photos: ${this.photos.length}`;
     }
 }
 
